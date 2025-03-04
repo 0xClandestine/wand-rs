@@ -1,11 +1,11 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
+use rayon::prelude::*;
 use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use walkdir::WalkDir;
-use rayon::prelude::*;
 
 #[derive(Parser, Debug)]
 pub struct VacuumArgs {
@@ -48,11 +48,14 @@ pub fn run(args: VacuumArgs) -> Result<()> {
         let sol_files: Vec<_> = WalkDir::new(dir)
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_file() && e.path().extension().map_or(false, |ext| ext == "sol"))
+            .filter(|e| {
+                e.path().is_file() && e.path().extension().map_or(false, |ext| ext == "sol")
+            })
             .map(|e| e.path().to_path_buf())
             .collect();
 
-        total_unused += sol_files.par_iter()
+        total_unused += sol_files
+            .par_iter()
             .map(|path| process_single_file(path, &args.root, args.delete, &args.ignore))
             .collect::<Result<Vec<usize>>>()?
             .iter()
@@ -87,7 +90,8 @@ fn count_function_occurrences(
         .map(|e| e.path().to_path_buf())
         .collect();
 
-    let counts: Vec<HashMap<String, usize>> = sol_files.par_iter()
+    let counts: Vec<HashMap<String, usize>> = sol_files
+        .par_iter()
         .map(|path| {
             let content = fs::read_to_string(path).unwrap_or_default();
             let mut local_counts = HashMap::new();
@@ -127,57 +131,71 @@ fn remove_unused_functions(sol_file: &PathBuf, unused_functions: &[String]) -> R
 
             // Find the opening bracket after the function declaration
             let mut pos = mat.end();
-            while pos < content.len() && content.chars().nth(pos) != Some('{') {
+            let mut found_semicolon = false;
+            while pos < content.len() {
+                match content.chars().nth(pos) {
+                    Some('{') => break,
+                    Some(';') => {
+                        found_semicolon = true;
+                        break;
+                    }
+                    _ => {}
+                }
                 pos += 1;
             }
 
             if pos < content.len() {
-                let mut bracket_count = 1;
-                pos += 1;
-
-                // Count brackets to find the end of the function
-                while bracket_count > 0 && pos < content.len() {
-                    match content.chars().nth(pos) {
-                        Some('{') => bracket_count += 1,
-                        Some('}') => bracket_count -= 1,
-                        _ => {}
-                    }
+                let end_pos = if found_semicolon {
+                    pos + 1
+                } else {
+                    let mut bracket_count = 1;
                     pos += 1;
-                }
 
-                if bracket_count == 0 {
-                    // Found the end of the function
-                    let end_pos = pos;
-
-                    // Look for NatSpec comments before the function
-                    let mut natspec_start = start_pos;
-                    if let Some(possible_natspec_start) = content[..start_pos].rfind("/**") {
-                        let between_text = content[possible_natspec_start..start_pos].trim();
-                        if between_text.starts_with("/**") && between_text.ends_with("*/") {
-                            natspec_start = possible_natspec_start;
+                    // Count brackets to find the end of the function
+                    while bracket_count > 0 && pos < content.len() {
+                        match content.chars().nth(pos) {
+                            Some('{') => bracket_count += 1,
+                            Some('}') => bracket_count -= 1,
+                            _ => {}
                         }
+                        pos += 1;
                     }
 
-                    // Find the start of the line containing the natspec or function
-                    let line_start = content[..natspec_start]
-                        .rfind('\n')
-                        .map_or(0, |pos| pos + 1);
+                    if bracket_count == 0 {
+                        pos
+                    } else {
+                        continue;
+                    }
+                };
 
-                    // Remove the function and its natspec completely
-                    let mut new_content = content[..line_start].to_string();
-                    new_content.push_str(
-                        &content[if end_pos < content.len()
-                            && content.chars().nth(end_pos) == Some('\n')
-                        {
-                            end_pos + 1
-                        } else {
-                            end_pos
-                        }..],
-                    );
-
-                    content = new_content;
-                    println!("Removed function: {}", func_name);
+                // Look for NatSpec comments before the function
+                let mut natspec_start = start_pos;
+                if let Some(possible_natspec_start) = content[..start_pos].rfind("/**") {
+                    let between_text = content[possible_natspec_start..start_pos].trim();
+                    if between_text.starts_with("/**") && between_text.ends_with("*/") {
+                        natspec_start = possible_natspec_start;
+                    }
                 }
+
+                // Find the start of the line containing the natspec or function
+                let line_start = content[..natspec_start]
+                    .rfind('\n')
+                    .map_or(0, |pos| pos + 1);
+
+                // Remove the function and its natspec completely
+                let mut new_content = content[..line_start].to_string();
+                new_content.push_str(
+                    &content[if end_pos < content.len()
+                        && content.chars().nth(end_pos) == Some('\n')
+                    {
+                        end_pos + 1
+                    } else {
+                        end_pos
+                    }..],
+                );
+
+                content = new_content;
+                println!("Removed function: {}", func_name);
             }
         }
     }
