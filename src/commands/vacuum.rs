@@ -7,6 +7,11 @@ use std::fs;
 use std::path::PathBuf;
 use walkdir::WalkDir;
 
+const RED: &str = "\x1b[31m";
+const YELLOW: &str = "\x1b[33m";
+const GREEN: &str = "\x1b[32m";
+const RESET: &str = "\x1b[0m";
+
 #[derive(Parser, Debug)]
 pub struct VacuumArgs {
     /// Path to a specific Solidity file to analyze.
@@ -228,7 +233,12 @@ fn process_single_file(
     for func in &functions {
         if !should_ignore_function(func, ignore_patterns) {
             let count = function_counts.get(func).unwrap_or(&0);
-            println!("{}: {} occurrences", func, count);
+            let color = match count {
+                1 => RED,
+                2 => YELLOW,
+                _ => GREEN,
+            };
+            println!("{}{}{}: {}", color, func, RESET, count);
         }
     }
 
