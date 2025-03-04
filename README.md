@@ -24,7 +24,7 @@ cargo install --path .
 
 ### Vacuum
 
-The `vacuum` command helps you identify and optionally remove unused functions in your Solidity contracts - keeping your codebase clean and reducing deployment gas costs.
+The `vacuum` command helps you identify and optionally remove unused functions in your Solidity contracts.
 
 #### Usage
 
