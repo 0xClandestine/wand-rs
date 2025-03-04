@@ -226,13 +226,10 @@ fn process_single_file(
         .collect();
 
     for func in &functions {
-        let count = function_counts.get(func).unwrap_or(&0);
-        let ignored_msg = if should_ignore_function(func, ignore_patterns) {
-            " (ignored)"
-        } else {
-            ""
-        };
-        println!("{}: {} occurrences{}", func, count, ignored_msg);
+        if !should_ignore_function(func, ignore_patterns) {
+            let count = function_counts.get(func).unwrap_or(&0);
+            println!("{}: {} occurrences", func, count);
+        }
     }
 
     if !unused_functions.is_empty() {
