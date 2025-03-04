@@ -48,6 +48,7 @@ wand vacuum path/to/Contract.sol --ignore "^test" --ignore "^_" --root path/to/p
 - `--root`: Root directory to search for function occurrences (default: current directory)
 - `--delete`: Remove unused functions from the Solidity file(s)
 - `--ignore`: Patterns for function names to ignore (default: `^test`)
+- `--no-match-path`: Skip searching for function occurrences in the specified directories
 
 ## Adding New Commands
 
