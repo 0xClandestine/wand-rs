@@ -14,13 +14,9 @@ const RESET: &str = "\x1b[0m";
 
 #[derive(Parser, Debug)]
 pub struct VacuumArgs {
-    /// Path to a specific Solidity file to analyze.
-    #[arg(long)]
-    file: Option<PathBuf>,
-
-    /// Directory containing Solidity files to analyze.
-    #[arg(long)]
-    dir: Option<PathBuf>,
+    /// Path to a Solidity file or directory to analyze.
+    #[arg(value_name = "PATH")]
+    path: PathBuf,
 
     /// Root directory to search for function occurrences.
     #[arg(long, default_value = ".")]
@@ -36,21 +32,15 @@ pub struct VacuumArgs {
 }
 
 pub fn run(args: VacuumArgs) -> Result<()> {
-    if args.file.is_none() && args.dir.is_none() {
-        return Err(anyhow!("Either --file or --dir must be specified."));
-    }
-
     let mut total_unused = 0;
 
-    if let Some(file) = &args.file {
-        if !file.extension().map_or(false, |ext| ext == "sol") {
-            println!("Warning: {:?} does not have a .sol extension.", file);
+    if args.path.is_file() {
+        if !args.path.extension().map_or(false, |ext| ext == "sol") {
+            println!("Warning: {:?} does not have a .sol extension.", args.path);
         }
-        total_unused += process_single_file(file, &args.root, args.delete, &args.ignore)?;
-    }
-
-    if let Some(dir) = &args.dir {
-        let sol_files: Vec<_> = WalkDir::new(dir)
+        total_unused += process_single_file(&args.path, &args.root, args.delete, &args.ignore)?;
+    } else if args.path.is_dir() {
+        let sol_files: Vec<_> = WalkDir::new(&args.path)
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| {
@@ -65,6 +55,8 @@ pub fn run(args: VacuumArgs) -> Result<()> {
             .collect::<Result<Vec<usize>>>()?
             .iter()
             .sum::<usize>();
+    } else {
+        return Err(anyhow!("Path {:?} does not exist.", args.path));
     }
 
     println!("\nTotal unused functions found: {}", total_unused);

@@ -30,22 +30,21 @@ The `vacuum` command helps you identify and optionally remove unused functions i
 
 ```bash
 # Find unused functions in a specific file
-wand vacuum --file path/to/Contract.sol --root path/to/project
+wand vacuum path/to/Contract.sol --root path/to/project
 
 # Find unused functions in all Solidity files in a directory
-wand vacuum --dir path/to/contracts --root path/to/project
+wand vacuum path/to/contracts --root path/to/project
 
 # Find and delete unused functions
-wand vacuum --file path/to/Contract.sol --root path/to/project --delete
+wand vacuum path/to/Contract.sol --root path/to/project --delete
 
 # Ignore specific function patterns (default ignores test functions)
-wand vacuum --file path/to/Contract.sol --ignore "^test" --ignore "^_" --root path/to/project
+wand vacuum path/to/Contract.sol --ignore "^test" --ignore "^_" --root path/to/project
 ```
 
 #### Options
 
-- `--file`: Path to a specific Solidity file to analyze
-- `--dir`: Directory containing Solidity files to analyze
+- `PATH`: Path to a Solidity file or directory to analyze
 - `--root`: Root directory to search for function occurrences (default: current directory)
 - `--delete`: Remove unused functions from the Solidity file(s)
 - `--ignore`: Patterns for function names to ignore (default: `^test`)
