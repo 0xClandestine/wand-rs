@@ -15,14 +15,9 @@ An expandable command-line interface that contains useful Foundry/Solidity relat
 ### Building from source
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/wand-rs.git
+git clone https://github.com/0xclandestine/wand-rs.git
 cd wand-rs
-
-# Build the project
-cargo build --release
-
-# The binary will be available at target/release/wand
+cargo install --path .
 ```
 
 ## Available Tools
