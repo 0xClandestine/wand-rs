@@ -187,18 +187,18 @@ fn remove_unused_functions(sol_file: &PathBuf, unused_functions: &[String]) -> R
                     .rfind('\n')
                     .map_or(0, |pos| pos + 1);
 
-                // Remove the function and its natspec completely
-                let mut new_content = content[..line_start].to_string();
-                new_content.push_str(
-                    &content[if end_pos < content.len()
-                        && content.chars().nth(end_pos) == Some('\n')
-                    {
-                        end_pos + 1
-                    } else {
-                        end_pos
-                    }..],
-                );
+                // Find the end of the line after the function
+                let next_line_start = content[end_pos..]
+                    .find('\n')
+                    .map(|pos| end_pos + pos + 1)
+                    .unwrap_or(content.len());
 
+                // Remove the function and its natspec completely
+                let mut new_content = String::new();
+                new_content.push_str(&content[..line_start]);
+                if next_line_start < content.len() {
+                    new_content.push_str(&content[next_line_start..]);
+                }
                 content = new_content;
                 println!("Removed function: {}", func_name);
             }
