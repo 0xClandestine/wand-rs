@@ -5,7 +5,5 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.31", features = ["derive"] }
-anyhow = "1.0.71"
 regex = "1.9.5"
-walkdir = "2.4.1"
 rayon = "1.8.1"

@@ -1,11 +1,10 @@
-use anyhow::{anyhow, Result};
 use clap::Parser;
 use rayon::prelude::*;
 use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
+use std::io::{Error, ErrorKind, Result};
 use std::path::PathBuf;
-use walkdir::WalkDir;
 
 const RED: &str = "\x1b[31m";
 const YELLOW: &str = "\x1b[33m";
@@ -40,15 +39,7 @@ pub fn run(args: VacuumArgs) -> Result<()> {
         }
         total_unused += process_single_file(&args.path, &args.root, args.delete, &args.ignore)?;
     } else if args.path.is_dir() {
-        let sol_files: Vec<_> = WalkDir::new(&args.path)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path().is_file() && e.path().extension().map_or(false, |ext| ext == "sol")
-            })
-            .map(|e| e.path().to_path_buf())
-            .collect();
-
+        let sol_files = collect_sol_files(&args.path)?;
         total_unused += sol_files
             .par_iter()
             .map(|path| process_single_file(path, &args.root, args.delete, &args.ignore))
@@ -56,16 +47,40 @@ pub fn run(args: VacuumArgs) -> Result<()> {
             .iter()
             .sum::<usize>();
     } else {
-        return Err(anyhow!("Path {:?} does not exist.", args.path));
+        return Err(Error::new(
+            ErrorKind::NotFound,
+            format!("Path {:?} does not exist.", args.path),
+        ));
     }
 
     println!("\nTotal unused functions found: {}", total_unused);
     Ok(())
 }
 
+fn collect_sol_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {
+    let mut sol_files = Vec::new();
+    let mut dirs_to_visit = vec![dir.clone()];
+
+    while let Some(current_dir) = dirs_to_visit.pop() {
+        for entry in fs::read_dir(current_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                dirs_to_visit.push(path);
+            } else if path.extension().map_or(false, |ext| ext == "sol") {
+                sol_files.push(path);
+            }
+        }
+    }
+
+    Ok(sol_files)
+}
+
 fn extract_functions(sol_file: &PathBuf) -> Result<Vec<String>> {
     let content = fs::read_to_string(sol_file)?;
-    let function_pattern = Regex::new(r"\bfunction\s+([a-zA-Z0-9_]+)\s*\(")?;
+    let function_pattern = Regex::new(r"\bfunction\s+([a-zA-Z0-9_]+)\s*\(")
+        .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
     Ok(function_pattern
         .captures_iter(&content)
@@ -80,12 +95,7 @@ fn count_function_occurrences(
     let mut function_counts: HashMap<String, usize> =
         function_names.iter().map(|f| (f.clone(), 0)).collect();
 
-    let sol_files: Vec<_> = WalkDir::new(root_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_file() && e.path().extension().map_or(false, |ext| ext == "sol"))
-        .map(|e| e.path().to_path_buf())
-        .collect();
+    let sol_files = collect_sol_files(root_dir)?;
 
     let counts: Vec<HashMap<String, usize>> = sol_files
         .par_iter()
@@ -121,7 +131,8 @@ fn remove_unused_functions(sol_file: &PathBuf, unused_functions: &[String]) -> R
     for func_name in unused_functions {
         let escaped_name = regex::escape(func_name);
         let pattern = format!(r"\bfunction\s+{}\s*\(", escaped_name);
-        let function_pattern = Regex::new(&pattern)?;
+        let function_pattern =
+            Regex::new(&pattern).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
         if let Some(mat) = function_pattern.find(&content) {
             let start_pos = mat.start();
