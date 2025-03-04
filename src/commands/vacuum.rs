@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use walkdir::WalkDir;
+use rayon::prelude::*;
 
 #[derive(Parser, Debug)]
 pub struct VacuumArgs {
@@ -44,13 +45,18 @@ pub fn run(args: VacuumArgs) -> Result<()> {
     }
 
     if let Some(dir) = &args.dir {
-        for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.is_file() && path.extension().map_or(false, |ext| ext == "sol") {
-                total_unused +=
-                    process_single_file(&path.into(), &args.root, args.delete, &args.ignore)?;
-            }
-        }
+        let sol_files: Vec<_> = WalkDir::new(dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_file() && e.path().extension().map_or(false, |ext| ext == "sol"))
+            .map(|e| e.path().to_path_buf())
+            .collect();
+
+        total_unused += sol_files.par_iter()
+            .map(|path| process_single_file(path, &args.root, args.delete, &args.ignore))
+            .collect::<Result<Vec<usize>>>()?
+            .iter()
+            .sum::<usize>();
     }
 
     println!("\nTotal unused functions found: {}", total_unused);
@@ -74,14 +80,27 @@ fn count_function_occurrences(
     let mut function_counts: HashMap<String, usize> =
         function_names.iter().map(|f| (f.clone(), 0)).collect();
 
-    for entry in WalkDir::new(root_dir).into_iter().filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if path.is_file() && path.extension().map_or(false, |ext| ext == "sol") {
-            let content = fs::read_to_string(path)?;
+    let sol_files: Vec<_> = WalkDir::new(root_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file() && e.path().extension().map_or(false, |ext| ext == "sol"))
+        .map(|e| e.path().to_path_buf())
+        .collect();
 
+    let counts: Vec<HashMap<String, usize>> = sol_files.par_iter()
+        .map(|path| {
+            let content = fs::read_to_string(path).unwrap_or_default();
+            let mut local_counts = HashMap::new();
             for func in function_names {
-                *function_counts.entry(func.clone()).or_default() += content.matches(func).count();
+                local_counts.insert(func.clone(), content.matches(func).count());
             }
+            local_counts
+        })
+        .collect();
+
+    for count in counts {
+        for (func, count) in count {
+            *function_counts.entry(func).or_default() += count;
         }
     }
 
