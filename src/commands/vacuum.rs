@@ -28,6 +28,10 @@ pub struct VacuumArgs {
     /// Patterns for function names to ignore (e.g., '^test' for functions starting with 'test').
     #[arg(long, default_values = ["^test"])]
     ignore: Vec<String>,
+
+    /// Skip searching for function occurrences in the specified directories.
+    #[arg(long)]
+    no_match_path: Vec<PathBuf>,
 }
 
 pub fn run(args: VacuumArgs) -> Result<()> {
@@ -37,12 +41,12 @@ pub fn run(args: VacuumArgs) -> Result<()> {
         if !args.path.extension().map_or(false, |ext| ext == "sol") {
             println!("Warning: {:?} does not have a .sol extension.", args.path);
         }
-        total_unused += process_single_file(&args.path, &args.root, args.delete, &args.ignore)?;
+        total_unused += process_single_file(&args.path, &args.root, args.delete, &args.ignore, &args.no_match_path)?;
     } else if args.path.is_dir() {
         let sol_files = collect_sol_files(&args.path)?;
         total_unused += sol_files
             .par_iter()
-            .map(|path| process_single_file(path, &args.root, args.delete, &args.ignore))
+            .map(|path| process_single_file(path, &args.root, args.delete, &args.ignore, &args.no_match_path))
             .collect::<Result<Vec<usize>>>()?
             .iter()
             .sum::<usize>();
@@ -91,11 +95,20 @@ fn extract_functions(sol_file: &PathBuf) -> Result<Vec<String>> {
 fn count_function_occurrences(
     root_dir: &PathBuf,
     function_names: &[String],
+    no_match_path: &[PathBuf],
 ) -> Result<HashMap<String, usize>> {
     let mut function_counts: HashMap<String, usize> =
         function_names.iter().map(|f| (f.clone(), 0)).collect();
 
     let sol_files = collect_sol_files(root_dir)?;
+    let sol_files: Vec<_> = sol_files
+        .into_iter()
+        .filter(|path| {
+            !no_match_path.iter().any(|skip_path| {
+                path.starts_with(skip_path)
+            })
+        })
+        .collect();
 
     let counts: Vec<HashMap<String, usize>> = sol_files
         .par_iter()
@@ -219,9 +232,15 @@ fn process_single_file(
     root_dir: &PathBuf,
     delete: bool,
     ignore_patterns: &[String],
+    no_match_path: &[PathBuf],
 ) -> Result<usize> {
+    // Skip processing if the file is in a no_match_path directory
+    if no_match_path.iter().any(|skip_path| sol_file.starts_with(skip_path)) {
+        return Ok(0);
+    }
+
     let functions = extract_functions(sol_file)?;
-    let function_counts = count_function_occurrences(root_dir, &functions)?;
+    let function_counts = count_function_occurrences(root_dir, &functions, no_match_path)?;
 
     println!("\nFunction Usage Report for {:?}:", sol_file);
     let unused_functions: Vec<_> = functions
